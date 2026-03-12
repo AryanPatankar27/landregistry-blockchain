@@ -9,7 +9,9 @@ import toast from "react-hot-toast";
 import { useSearchParams } from "next/navigation";
 import { FiSend, FiCheck, FiHash, FiUser } from "react-icons/fi";
 
-export default function TransferPage() {
+import { Suspense } from "react";
+
+function TransferContent() {
     const { address, isConnected } = useAccount();
     const { token } = useAppStore();
     const searchParams = useSearchParams();
@@ -215,5 +217,13 @@ export default function TransferPage() {
                 </div>
             </div>
         </div>
+    );
+}
+
+export default function TransferPage() {
+    return (
+        <Suspense fallback={<div className="page-container" style={{ maxWidth: "800px", margin: "0 auto" }}><h1 className="section-title">Loading Transfers...</h1></div>}>
+            <TransferContent />
+        </Suspense>
     );
 }
