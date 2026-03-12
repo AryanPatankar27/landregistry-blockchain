@@ -1,0 +1,69 @@
+// Prisma schema for TerraChain Land Registry (off-chain metadata)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String         @id @default(uuid())
+  walletAddress String         @unique
+  role          String         @default("OWNER")
+  displayName   String?
+  email         String?
+  nonce         String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  notifications Notification[]
+}
+
+model LandParcelCache {
+  id           String   @id @default(uuid())
+  tokenId      Int      @unique
+  surveyNumber String
+  location     String
+  latitude     Float?
+  longitude    Float?
+  area         Float
+  documentsCID String
+  owner        String
+  status       String   @default("PENDING")
+  txHash       String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model TransferCache {
+  id          String   @id @default(uuid())
+  tokenId     Int
+  fromAddress String
+  toAddress   String
+  status      String   @default("INITIATED")
+  txHash      String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  title     String
+  message   String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model DisputeCache {
+  id          String   @id @default(uuid())
+  tokenId     Int
+  reporter    String
+  evidenceCID String
+  resolved    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}

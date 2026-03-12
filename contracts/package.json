@@ -1,0 +1,21 @@
+{
+    "name": "terrachain-contracts",
+    "version": "1.0.0",
+    "description": "Smart contracts for TerraChain Land Registry",
+    "scripts": {
+        "compile": "npx hardhat compile",
+        "test": "npx hardhat test",
+        "node": "npx hardhat node",
+        "deploy:local": "npx hardhat run scripts/deploy.ts --network localhost",
+        "deploy:amoy": "npx hardhat run scripts/deploy.ts --network amoy"
+    },
+    "devDependencies": {
+        "@nomicfoundation/hardhat-toolbox": "^4.0.0",
+        "@openzeppelin/contracts": "^5.0.0",
+        "@types/node": "^20.0.0",
+        "dotenv": "^17.3.1",
+        "hardhat": "^2.28.6",
+        "ts-node": "^10.9.0",
+        "typescript": "^5.3.0"
+    }
+}
