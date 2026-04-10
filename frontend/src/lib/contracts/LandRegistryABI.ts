@@ -190,6 +190,30 @@ export const LandRegistryABI = [
         stateMutability: "nonpayable",
         type: "function",
     },
+    {
+        inputs: [
+            { internalType: "bytes32", name: "role", type: "bytes32" },
+            { internalType: "address", name: "account", type: "address" },
+        ],
+        name: "hasRole",
+        outputs: [{ internalType: "bool", name: "", type: "bool" }],
+        stateMutability: "view",
+        type: "function",
+    },
+    {
+        inputs: [],
+        name: "ADMIN_ROLE",
+        outputs: [{ internalType: "bytes32", name: "", type: "bytes32" }],
+        stateMutability: "view",
+        type: "function",
+    },
+    {
+        inputs: [],
+        name: "REGISTRAR_ROLE",
+        outputs: [{ internalType: "bytes32", name: "", type: "bytes32" }],
+        stateMutability: "view",
+        type: "function",
+    },
     // ─── Events ───
     {
         anonymous: false,

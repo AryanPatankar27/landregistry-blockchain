@@ -1,124 +1,291 @@
 # TerraChain — Decentralized Land Registry
 
-TerraChain is a next-generation, blockchain-powered land registry system designed to eliminate fraud, reduce bureaucracy, and provide true, immutable ownership of real estate.
+TerraChain is a blockchain-powered land registry system that eliminates fraud, reduces bureaucracy, and provides immutable ownership of real estate. Every land parcel is an ERC-721 NFT on the Ethereum Sepolia testnet.
 
-Built with **Next.js 14**, **Node.js/Express**, and **Solidity (Polygon/Ethereum)**, TerraChain replaces paper-based registries with transparent, on-chain records utilizing ERC-721 NFTs.
-
-## 🌟 Key Features
-
-*   **Immutable Records:** Every land parcel is minted as a unique ERC-721 NFT (Non-Fungible Token) on the blockchain. Once registered and approved, it cannot be tampered with.
-*   **Role-Based Access Control:** Strict Separation of Duties. Normal citizens can register and transfer land, but only government **Registrars** can approve registrations or finalize transfers.
-*   **Instant & Secure Transfers:** Transfer land ownership securely through a cryptographic three-step process (Initiate -> Accept -> Approve), eliminating double-selling fraud.
-*   **Dispute Management:** Integrated dispute flagging. If an issue arises, any citizen can submit IPFS evidence to flag a parcel. Disputed parcels are instantly "frozen," blocking any transfers until a Registrar resolves the issue.
-*   **Transparent Ownership History:** A permanent, publicly verifiable timeline of past ownership is kept cryptographically secure on the blockchain.
-*   **Off-Chain Cache:** A high-performance Node.js/PostgreSQL (SQLite for local dev) backend indexes the blockchain to provide lightning-fast searches and dashboard aggregation without relying entirely on slow RPC calls.
+Built with **Next.js 16**, **Node.js / Express**, **Prisma**, and **Solidity 0.8.20**, using **Wagmi v3 + Viem** for on-chain interaction and **SIWE (Sign-In with Ethereum)** for wallet authentication.
 
 ---
 
-## 🏗️ Architecture
+## Features
 
-The project is split into three distinct micro-services:
-
-1.  **`/contracts` (Hardhat / Solidity):**
-    *   The core `LandRegistry.sol` smart contract written in Solidity `0.8.28`.
-    *   Utilizes OpenZeppelin libraries for secure `ERC721`, `AccessControl`, and `ReentrancyGuard` implementations.
-    *   Deployed locally via Hardhat Node, or to Polygon Amoy Testnet.
-2.  **`/backend` (Node.js / Express / Prisma):**
-    *   Provides off-chain caching for lightning-fast frontend dashboard loading.
-    *   Utilizes SIWE (Sign-In with Ethereum) for secure wallet-based authentication, issuing off-chain JWTs.
-    *   Synchronizes and indexes on-chain data (parcels, transfers, disputes).
-3.  **`/frontend` (Next.js 14 App Router):**
-    *   A highly interactive, modern web application styled with Tailwind CSS and advanced glassmorphism aesthetics.
-    *   Utilizes `wagmi` and `viem` to broadcast transactions to MetaMask and the blockchain.
+- **ERC-721 NFT Land Parcels** — every approved parcel is minted as a unique NFT
+- **Role-Based Access Control** — on-chain `ADMIN_ROLE` and `REGISTRAR_ROLE` via OpenZeppelin AccessControl; roles auto-synced from chain on every login
+- **Three-step Transfers** — Initiate → Accept (buyer) → Approve (registrar), preventing double-selling fraud
+- **Dispute Freezing** — any citizen can freeze a parcel by raising a dispute with IPFS evidence; registrars resolve it
+- **Immutable Ownership History** — full chain of custody stored on-chain
+- **Off-Chain Cache** — Express + Prisma/SQLite indexes events for fast dashboard queries
+- **SIWE Authentication** — wallet-native sign-in; JWT issued with on-chain role
+- **Pre-flight Validation** — frontend checks the contract before opening MetaMask to prevent "likely to fail" warnings
 
 ---
 
-## 🚀 Local Development Setup
+## Architecture
 
-Follow these steps to run the entire TerraChain ecosystem locally on your machine.
+```
+blockchain-major-project/
+├── contracts/              # Hardhat project
+│   ├── contracts/
+│   │   └── LandRegistry.sol
+│   └── scripts/
+│       └── deploy.ts       # Auto-updates .env files on deploy
+│
+├── backend/                # Express 5 + Prisma off-chain cache
+│   ├── src/
+│   │   ├── routes/
+│   │   │   ├── auth.routes.ts      # SIWE + on-chain role sync
+│   │   │   ├── land.routes.ts      # Land CRUD + OR-logic search
+│   │   │   ├── dashboard.routes.ts # Owner / Registrar / Admin views
+│   │   │   ├── transfer.routes.ts
+│   │   │   └── dispute.routes.ts
+│   │   └── middleware/
+│   │       └── auth.middleware.ts
+│   └── prisma/schema.prisma
+│
+└── frontend/               # Next.js 16 App Router
+    └── src/
+        ├── app/
+        │   ├── dashboard/page.tsx   # Role-aware dashboard
+        │   ├── land/
+        │   │   ├── register/page.tsx
+        │   │   ├── search/page.tsx
+        │   │   └── [tokenId]/page.tsx
+        │   ├── transfer/page.tsx
+        │   └── disputes/page.tsx
+        ├── components/
+        │   └── Navbar.tsx           # Unified connect+sign-in flow
+        └── lib/
+            ├── wagmi.ts
+            ├── store.ts             # Zustand (persisted to localStorage)
+            ├── api.ts
+            └── contracts/
+                └── LandRegistryABI.ts
+```
+
+---
+
+## Smart Contract
+
+### Roles
+
+| Role | Who | Permissions |
+|---|---|---|
+| `DEFAULT_ADMIN_ROLE` | Deployer | Full admin |
+| `ADMIN_ROLE` | Deployer | Manage registrars, view analytics |
+| `REGISTRAR_ROLE` | Deployer + assigned | Approve/reject registrations & transfers, resolve disputes |
+
+### Key Functions
+
+| Function | Caller | Description |
+|---|---|---|
+| `registerLand(surveyNumber, location, area, documentsCID)` | Anyone | Submit parcel (status: Pending) |
+| `approveLand(tokenId)` | Registrar | Mint NFT to owner |
+| `rejectLand(tokenId, reason)` | Registrar | Reject pending registration |
+| `initiateTransfer(tokenId, buyer)` | Owner | Start transfer |
+| `acceptTransfer(tokenId)` | Buyer | Accept transfer |
+| `approveTransfer(tokenId)` | Registrar | Complete NFT transfer |
+| `raiseDispute(tokenId, evidenceCID)` | Anyone | Freeze parcel |
+| `resolveDispute(tokenId, upheld)` | Registrar | Clear or uphold dispute |
+| `addRegistrar(address)` | Admin | Grant REGISTRAR_ROLE |
+| `hasRole(role, account)` | View | Check on-chain role |
+
+### Parcel Status Flow
+
+```
+          registerLand()
+               │
+           [PENDING]
+          /           \
+  approveLand()    rejectLand()
+       │
+   [APPROVED] ──raiseDispute()──► [UNDER_DISPUTE]
+       ▲                                │
+       └──────resolveDispute(false)─────┘
+                                        │
+                         resolveDispute(true) → stays frozen
+```
+
+---
+
+## Local Development Setup
 
 ### Prerequisites
 
-*   **Node.js** (v18+)
-*   **MetaMask** Browser Extension
+- Node.js 18+
+- MetaMask browser extension
+- Sepolia ETH (from a faucet like [sepoliafaucet.com](https://sepoliafaucet.com))
 
-### 1. Smart Contracts (Hardhat)
+### 1. Install Dependencies
 
-1.  Open a terminal and navigate to the contracts directory:
-    ```bash
-    cd contracts
-    ```
-2.  Install dependencies:
-    ```bash
-    npm install
-    ```
-3.  Start the local Hardhat blockchain node:
-    ```bash
-    npx hardhat node
-    ```
-    *(Leave this terminal window open. It provides 20 test accounts with 10,000 ETH each).*
-4.  Open a **new** terminal window, navigate to the contracts directory again, and deploy the smart contract to your local node:
-    ```bash
-    npx hardhat run scripts/deploy.ts --network localhost
-    ```
-5.  **Copy the Contract Address** printed in the terminal (e.g., `0x5Fb...`).
+```bash
+cd contracts && npm install
+cd ../backend && npm install
+cd ../frontend && npm install
+```
 
-### 2. Backend (Node.js/Express)
+### 2. Configure Environment
 
-1.  Open a new terminal and navigate to the backend directory:
-    ```bash
-    cd backend
-    ```
-2.  Install dependencies:
-    ```bash
-    npm install
-    ```
-3.  Configure your environment variables:
-    *   Open `backend/.env`
-    *   Set the `CONTRACT_ADDRESS=` to the address you copied from the deployment step.
-4.  Initialize the Prisma Database (SQLite):
-    ```bash
-    npx prisma migrate dev --name init
-    npx prisma generate
-    ```
-5.  Start the backend development server:
-    ```bash
-    npm run dev
-    ```
-    *(The backend will start running on port 5000).*
+**`contracts/.env`**
+```env
+SEPOLIA_RPC_URL=https://sepolia.infura.io/v3/YOUR_PROJECT_ID
+PRIVATE_KEY=your_deployer_wallet_private_key
+```
 
-### 3. Frontend (Next.js)
+**`backend/.env`**
+```env
+DATABASE_URL=file:./prisma/dev.db
+JWT_SECRET=your-secret-key
+JWT_EXPIRES_IN=7d
+PORT=5000
+FRONTEND_URL=http://localhost:3000
+# These are filled automatically by the deploy script:
+CONTRACT_ADDRESS=
+RPC_URL=
+```
 
-1.  Open a final terminal and navigate to the frontend directory:
-    ```bash
-    cd frontend
-    ```
-2.  Install dependencies:
-    ```bash
-    npm install
-    ```
-3.  Configure your environment variables:
-    *   Open `frontend/.env.local`
-    *   Set the `NEXT_PUBLIC_CONTRACT_ADDRESS=` to the address you copied from the deployment step.
-4.  Start the Next.js development server:
-    ```bash
-    npm run dev
-    ```
-    *(The frontend will start running on port 3000).*
+**`frontend/.env.local`**
+```env
+NEXT_PUBLIC_API_URL=http://localhost:5000/api
+NEXT_PUBLIC_CHAIN_ID=11155111
+# These are filled automatically by the deploy script:
+NEXT_PUBLIC_CONTRACT_ADDRESS=
+NEXT_PUBLIC_RPC_URL=
+```
 
----
+### 3. Deploy the Contract
 
-## 🦊 Testing with MetaMask locally
+```bash
+cd contracts
+npx hardhat run scripts/deploy.ts --network sepolia
+```
 
-1.  Open MetaMask and add the **Hardhat Localhost** network:
-    *   **RPC URL:** `http://127.0.0.1:8545`
-    *   **Chain ID:** `31337`
-    *   **Currency Symbol:** `ETH`
-2.  Import **Account #0** Private Key from your terminal running the `hardhat node`. (This account deployed the contract, so it acts as the **Registrar**).
-3.  Import **Account #1** Private Key. (This account will act as the **Citizen/User**).
-4.  Visit [http://localhost:3000](http://localhost:3000), connect your wallet, and start registering land!
+The deploy script automatically updates `backend/.env` and `frontend/.env.local` with `CONTRACT_ADDRESS` and `RPC_URL`.
+
+### 4. Start the Backend
+
+```bash
+cd backend
+npx prisma migrate dev --name init
+npx prisma generate
+npm run dev
+# Running on http://localhost:5000
+```
+
+### 5. Start the Frontend
+
+```bash
+cd frontend
+npm run dev
+# Running on http://localhost:3000
+```
 
 ---
 
-## 📜 License
-This project is licensed under the MIT License.
+## Using the App
+
+### Connect & Sign In
+
+Clicking **Connect Wallet** triggers a two-step flow automatically:
+1. MetaMask opens for **account selection**
+2. MetaMask immediately prompts for a **SIWE signature**
+3. Backend verifies the signature, checks on-chain roles, and issues a JWT
+4. If Account 1 (deployer) signs in, their role is auto-detected as `ADMIN` from the contract
+
+If you accidentally reject the signature, a **Sign In** retry button appears next to your address without needing to reconnect.
+
+Switching accounts in MetaMask automatically clears the previous session.
+
+### Registering Land (Account 2 / Citizen)
+
+1. Connect with Account 2 and sign in
+2. Go to **Register Land**
+3. Fill in survey number, location, area (integer sq. meters), and an IPFS CID for documents
+4. Submit — the frontend first validates on-chain that the survey number isn't taken
+5. After MetaMask confirms the transaction, the real `tokenId` is parsed from the `LandRegistered` event and stored in the backend
+
+### Approving Land (Account 1 / Admin)
+
+1. Connect with Account 1 and sign in (role shows as `ADMIN`)
+2. Go to **Dashboard** — pending registrations appear in a table
+3. Click **Approve** — if `tokenId` is `0` in the DB (cached before receipt), the dashboard auto-resolves the real ID via `getTokenIdBySurvey` on-chain
+4. MetaMask opens for `approveLand` — the NFT is minted to the citizen
+
+### Search
+
+Search by survey number, location, or wallet address from the **Search** page. Uses OR logic — one query matches across all fields.
+
+---
+
+## Authentication & Role Sync
+
+Every SIWE login triggers an on-chain role check via `hasRole`:
+- If the wallet has `ADMIN_ROLE` on-chain → DB role set to `ADMIN`
+- If the wallet has `REGISTRAR_ROLE` on-chain → DB role set to `REGISTRAR`
+- Otherwise → role remains `OWNER`
+
+User session (JWT + user object) is persisted to `localStorage` and restored on page refresh. Stale sessions (mismatched address) are cleared automatically.
+
+---
+
+## Gas Limits
+
+Explicit gas limits prevent MetaMask simulation failures on Sepolia:
+
+| Function | Gas |
+|---|---|
+| `registerLand` | 350,000 |
+| `approveLand` | 250,000 |
+| `approveTransfer` | 200,000 |
+| `initiateTransfer` | 150,000 |
+| `raiseDispute` | 150,000 |
+| `acceptTransfer` | 100,000 |
+| `resolveDispute` | 100,000 |
+| `rejectLand` | 80,000 |
+
+---
+
+## API Reference
+
+### Auth (`/api/auth`)
+
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| GET | `/nonce` | — | Get SIWE nonce |
+| POST | `/verify` | — | Verify signature, issue JWT, sync on-chain role |
+| GET | `/me` | JWT | Current user profile |
+| PATCH | `/role/:wallet` | Admin JWT | Update user role |
+
+### Land (`/api/land`)
+
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| POST | `/register` | JWT | Cache a new registration |
+| GET | `/` | — | Search (`?query=`, `?status=`) |
+| GET | `/:tokenId` | — | Get parcel by tokenId |
+| PATCH | `/:tokenId/status` | JWT | Update status / correct tokenId |
+
+### Dashboard (`/api/dashboard`)
+
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| GET | `/owner` | JWT | My parcels + recent transfers |
+| GET | `/registrar` | Registrar JWT | Pending items + stats |
+| GET | `/admin` | Admin JWT | Platform-wide analytics |
+
+### Transfers (`/api/transfer`)
+
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| POST | `/` | JWT | Cache transfer initiation |
+
+### Disputes (`/api/disputes`)
+
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| POST | `/` | JWT | Cache a raised dispute |
+| GET | `/pending` | Registrar JWT | List unresolved disputes |
+
+---
+
+## License
+
+MIT

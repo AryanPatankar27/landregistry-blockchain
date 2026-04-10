@@ -1,9 +1,29 @@
 import { Router, Request, Response } from "express";
 import { generateNonce, SiweMessage } from "siwe";
 import jwt from "jsonwebtoken";
+import { ethers } from "ethers";
 import { config } from "../config";
 import prisma from "../config/prisma";
 import { authenticate, AuthRequest } from "../middleware/auth.middleware";
+
+const ROLE_CHECK_ABI = [
+    "function hasRole(bytes32 role, address account) view returns (bool)"
+];
+const ADMIN_ROLE = ethers.keccak256(ethers.toUtf8Bytes("ADMIN_ROLE"));
+const REGISTRAR_ROLE = ethers.keccak256(ethers.toUtf8Bytes("REGISTRAR_ROLE"));
+
+async function getOnChainRole(wallet: string): Promise<string | null> {
+    try {
+        if (!config.contractAddress || !config.rpcUrl) return null;
+        const provider = new ethers.JsonRpcProvider(config.rpcUrl);
+        const contract = new ethers.Contract(config.contractAddress, ROLE_CHECK_ABI, provider);
+        if (await contract.hasRole(ADMIN_ROLE, wallet)) return "ADMIN";
+        if (await contract.hasRole(REGISTRAR_ROLE, wallet)) return "REGISTRAR";
+    } catch (e) {
+        console.warn("On-chain role check skipped:", (e as any)?.message?.slice(0, 80));
+    }
+    return null;
+}
 
 const router = Router();
 
@@ -48,6 +68,16 @@ router.post("/verify", async (req: Request, res: Response) => {
                 where: { walletAddress },
                 data: { nonce: fields.nonce },
             });
+        }
+
+        // Sync on-chain role (ADMIN/REGISTRAR) — overrides DB role if on-chain is higher
+        const onChainRole = await getOnChainRole(walletAddress);
+        if (onChainRole && user.role !== onChainRole) {
+            user = await prisma.user.update({
+                where: { walletAddress },
+                data: { role: onChainRole },
+            });
+            console.log(`Role synced for ${walletAddress}: ${onChainRole}`);
         }
 
         // Issue JWT

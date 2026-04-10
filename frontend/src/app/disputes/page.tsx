@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useAccount, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
+import { useAccount, useWriteContract, useWaitForTransactionReceipt, useSwitchChain } from "wagmi";
+import { sepolia } from "wagmi/chains";
 import { LandRegistryABI, CONTRACT_ADDRESS } from "@/lib/contracts/LandRegistryABI";
 import { useAppStore } from "@/lib/store";
 import { api } from "@/lib/api";
@@ -9,10 +10,11 @@ import toast from "react-hot-toast";
 import { FiAlertTriangle, FiHash, FiUpload, FiCheck, FiX } from "react-icons/fi";
 
 export default function DisputesPage() {
-    const { address, isConnected } = useAccount();
+    const { address, isConnected, chainId } = useAccount();
     const { token, user } = useAppStore();
     const { writeContract, data: hash, isPending } = useWriteContract();
     const { isLoading: isConfirming } = useWaitForTransactionReceipt({ hash });
+    const { switchChainAsync } = useSwitchChain();
 
     const [form, setForm] = useState({ tokenId: "", evidenceCID: "" });
     const [disputes, setDisputes] = useState<any[]>([]);
@@ -47,6 +49,11 @@ export default function DisputesPage() {
         }
 
         try {
+            if (chainId !== sepolia.id) {
+                toast.loading("Switching to Sepolia...", { id: "dispute" });
+                await switchChainAsync({ chainId: sepolia.id });
+            }
+
             toast.loading("Raising dispute on-chain...", { id: "dispute" });
 
             writeContract({
@@ -54,6 +61,7 @@ export default function DisputesPage() {
                 abi: LandRegistryABI,
                 functionName: "raiseDispute",
                 args: [BigInt(form.tokenId), form.evidenceCID],
+                gas: BigInt(150_000),
             }, {
                 onSuccess: async () => {
                     toast.success("Dispute raised! The parcel is now frozen.", { id: "dispute" });
@@ -200,6 +208,7 @@ export default function DisputesPage() {
                                                                 abi: LandRegistryABI,
                                                                 functionName: "resolveDispute",
                                                                 args: [BigInt(d.tokenId), false],
+                                                                gas: BigInt(100_000),
                                                             });
                                                             toast.success("Dispute cleared");
                                                         }}
@@ -215,6 +224,7 @@ export default function DisputesPage() {
                                                                 abi: LandRegistryABI,
                                                                 functionName: "resolveDispute",
                                                                 args: [BigInt(d.tokenId), true],
+                                                                gas: BigInt(100_000),
                                                             });
                                                             toast.error("Dispute upheld — parcel remains frozen");
                                                         }}

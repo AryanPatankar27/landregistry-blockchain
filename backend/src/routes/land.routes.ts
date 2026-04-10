@@ -75,12 +75,28 @@ router.get("/:tokenId", async (req: Request, res: Response) => {
 // Search land parcels
 router.get("/", async (req: Request, res: Response) => {
     try {
-        const { surveyNumber, owner, location, status } = req.query;
+        const { surveyNumber, owner, location, status, query } = req.query;
 
         const where: any = {};
-        if (surveyNumber) where.surveyNumber = { contains: surveyNumber as string };
-        if (owner) where.owner = (owner as string).toLowerCase();
-        if (location) where.location = { contains: location as string };
+
+        if (query) {
+            const q = (query as string).trim();
+            // If it looks like a wallet address, search by owner
+            if (/^0x[0-9a-fA-F]{20,}$/.test(q)) {
+                where.owner = q.toLowerCase();
+            } else {
+                // Search surveyNumber OR location
+                where.OR = [
+                    { surveyNumber: { contains: q } },
+                    { location: { contains: q } },
+                ];
+            }
+        } else {
+            if (surveyNumber) where.surveyNumber = { contains: surveyNumber as string };
+            if (owner) where.owner = (owner as string).toLowerCase();
+            if (location) where.location = { contains: location as string };
+        }
+
         if (status) where.status = status as string;
 
         const parcels = await prisma.landParcelCache.findMany({
@@ -97,17 +113,22 @@ router.get("/", async (req: Request, res: Response) => {
     }
 });
 
-// Update parcel status (used by event listener)
+// Update parcel status (used by frontend after on-chain actions)
 router.patch(
     "/:tokenId/status",
     authenticate,
     async (req: AuthRequest, res: Response) => {
         try {
             const tokenId = parseInt(req.params.tokenId as string);
-            const { status, owner } = req.body;
+            const { status, owner, newTokenId } = req.body;
 
-            const updateData: any = { status };
+            const updateData: any = {};
+            if (status) updateData.status = status;
             if (owner) updateData.owner = owner.toLowerCase();
+            // Allow correcting a tokenId=0 record with the real on-chain tokenId
+            if (newTokenId !== undefined && parseInt(newTokenId) > 0) {
+                updateData.tokenId = parseInt(newTokenId);
+            }
 
             const parcel = await prisma.landParcelCache.update({
                 where: { tokenId },

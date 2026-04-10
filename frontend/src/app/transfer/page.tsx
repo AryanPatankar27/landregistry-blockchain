@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useAccount, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
+import { useAccount, useWriteContract, useWaitForTransactionReceipt, useSwitchChain } from "wagmi";
+import { sepolia } from "wagmi/chains";
 import { LandRegistryABI, CONTRACT_ADDRESS } from "@/lib/contracts/LandRegistryABI";
 import { useAppStore } from "@/lib/store";
 import { api } from "@/lib/api";
@@ -12,11 +13,12 @@ import { FiSend, FiCheck, FiHash, FiUser } from "react-icons/fi";
 import { Suspense } from "react";
 
 function TransferContent() {
-    const { address, isConnected } = useAccount();
+    const { address, isConnected, chainId } = useAccount();
     const { token } = useAppStore();
     const searchParams = useSearchParams();
     const { writeContract, data: hash, isPending } = useWriteContract();
     const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+    const { switchChainAsync } = useSwitchChain();
 
     const [form, setForm] = useState({
         tokenId: searchParams.get("tokenId") || "",
@@ -34,6 +36,11 @@ function TransferContent() {
         }
 
         try {
+            if (chainId !== sepolia.id) {
+                toast.loading("Switching to Sepolia...", { id: "transfer" });
+                await switchChainAsync({ chainId: sepolia.id });
+            }
+
             toast.loading("Initiating transfer...", { id: "transfer" });
 
             writeContract({
@@ -41,6 +48,7 @@ function TransferContent() {
                 abi: LandRegistryABI,
                 functionName: "initiateTransfer",
                 args: [BigInt(form.tokenId), form.buyerAddress as `0x${string}`],
+                gas: BigInt(150_000),
             }, {
                 onSuccess: async (txHash) => {
                     toast.success("Transfer initiated!", { id: "transfer" });
@@ -86,6 +94,7 @@ function TransferContent() {
                 abi: LandRegistryABI,
                 functionName: "acceptTransfer",
                 args: [BigInt(acceptTokenId)],
+                gas: BigInt(100_000),
             }, {
                 onSuccess: () => {
                     toast.success("Transfer accepted!", { id: "accept" });

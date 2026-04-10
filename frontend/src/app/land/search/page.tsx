@@ -19,9 +19,7 @@ export default function SearchPage() {
         setSearched(true);
 
         try {
-            const data = await api(
-                `/land?surveyNumber=${encodeURIComponent(query)}&location=${encodeURIComponent(query)}`
-            );
+            const data = await api(`/land?query=${encodeURIComponent(query)}`);
             setResults(data.parcels || []);
         } catch (error) {
             console.error(error);
